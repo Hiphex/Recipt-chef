@@ -163,7 +163,7 @@ struct ReceiptListView: View {
                     } label: {
                         ZStack(alignment: .topTrailing) {
                             Image(systemName: "line.3.horizontal.decrease.circle")
-                                .foregroundStyle(activeFiltersCount > 0 ? .accentColor : .primary)
+                                .foregroundStyle(activeFiltersCount > 0 ? Color.accentColor : Color.primary)
 
                             if activeFiltersCount > 0 {
                                 Circle()
