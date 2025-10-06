@@ -8,7 +8,30 @@ class SpendingAnalyticsService {
     private let apiKey = "" // Add your OpenAI API key here
     private let apiURL = "https://api.openai.com/v1/chat/completions"
 
+    private let monthFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "LLLL yyyy"
+        return formatter
+    }()
+
+    private let weekFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "'Week of' MMM d, yyyy"
+        return formatter
+    }()
+
+    private let formatterQueue = DispatchQueue(label: "SpendingAnalyticsService.Formatters")
+
     private init() {}
+
+    private var sanitizedAPIKey: String? {
+        let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 
     // MARK: - Generate Spending Insights
     func generateSpendingInsights(
@@ -16,6 +39,11 @@ class SpendingAnalyticsService {
         budgets: [Budget],
         completion: @escaping (Result<SpendingInsights, Error>) -> Void
     ) {
+        guard let apiKey = sanitizedAPIKey else {
+            deliverResult(.failure(AnalyticsError.missingAPIKey), to: completion)
+            return
+        }
+
         let spendingData = prepareSpendingData(receipts: receipts, budgets: budgets)
 
         let prompt = """
@@ -60,52 +88,17 @@ class SpendingAnalyticsService {
             "reasoning_effort": "medium"
         ]
 
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: requestBody) else {
-            completion(.failure(AnalyticsError.invalidRequest))
-            return
+        performChatCompletion(requestBody: requestBody, apiKey: apiKey) { [weak self] result in
+            guard let self = self else { return }
+
+            switch result {
+            case .success(let content):
+                let insights = self.parseInsightsResponse(content)
+                self.deliverResult(.success(insights), to: completion)
+            case .failure(let error):
+                self.deliverResult(.failure(error), to: completion)
+            }
         }
-
-        var request = URLRequest(url: URL(string: apiURL)!)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                completion(.failure(error))
-                return
-            }
-
-            guard let data = data else {
-                completion(.failure(AnalyticsError.noDataReceived))
-                return
-            }
-
-            do {
-                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    // Check for API errors
-                    if let error = json["error"] as? [String: Any],
-                       let message = error["message"] as? String {
-                        completion(.failure(NSError(domain: "OpenAI", code: -1, userInfo: [NSLocalizedDescriptionKey: message])))
-                        return
-                    }
-
-                    if let choices = json["choices"] as? [[String: Any]],
-                       let firstChoice = choices.first,
-                       let message = firstChoice["message"] as? [String: Any],
-                       let content = message["content"] as? String {
-
-                        let insights = self.parseInsightsResponse(content)
-                        completion(.success(insights))
-                    } else {
-                        completion(.failure(AnalyticsError.invalidResponse))
-                    }
-                }
-            } catch {
-                completion(.failure(error))
-            }
-        }.resume()
     }
 
     // MARK: - Generate Spending Trends Analysis
@@ -114,6 +107,11 @@ class SpendingAnalyticsService {
         timeframe: AnalyticsTimeframe,
         completion: @escaping (Result<TrendAnalysis, Error>) -> Void
     ) {
+        guard let apiKey = sanitizedAPIKey else {
+            deliverResult(.failure(AnalyticsError.missingAPIKey), to: completion)
+            return
+        }
+
         let trendData = prepareTrendData(receipts: receipts, timeframe: timeframe)
 
         let prompt = """
@@ -150,25 +148,51 @@ class SpendingAnalyticsService {
             "reasoning_effort": "medium"
         ]
 
+        performChatCompletion(requestBody: requestBody, apiKey: apiKey) { [weak self] result in
+            guard let self = self else { return }
+
+            switch result {
+            case .success(let content):
+                let trends = self.parseTrendResponse(content)
+                self.deliverResult(.success(trends), to: completion)
+            case .failure(let error):
+                self.deliverResult(.failure(error), to: completion)
+            }
+        }
+    }
+
+    // MARK: - Networking
+    private func performChatCompletion(
+        requestBody: [String: Any],
+        apiKey: String,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: requestBody) else {
-            completion(.failure(AnalyticsError.invalidRequest))
+            deliverResult(.failure(AnalyticsError.invalidRequest), to: completion)
             return
         }
 
-        var request = URLRequest(url: URL(string: apiURL)!)
+        guard let url = URL(string: apiURL) else {
+            deliverResult(.failure(AnalyticsError.invalidURL), to: completion)
+            return
+        }
+
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+
             if let error = error {
-                completion(.failure(error))
+                self.deliverResult(.failure(error), to: completion)
                 return
             }
 
             guard let data = data else {
-                completion(.failure(AnalyticsError.noDataReceived))
+                self.deliverResult(.failure(AnalyticsError.noDataReceived), to: completion)
                 return
             }
 
@@ -176,7 +200,12 @@ class SpendingAnalyticsService {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     if let error = json["error"] as? [String: Any],
                        let message = error["message"] as? String {
-                        completion(.failure(NSError(domain: "OpenAI", code: -1, userInfo: [NSLocalizedDescriptionKey: message])))
+                        let apiError = NSError(
+                            domain: "OpenAI",
+                            code: -1,
+                            userInfo: [NSLocalizedDescriptionKey: message]
+                        )
+                        self.deliverResult(.failure(apiError), to: completion)
                         return
                     }
 
@@ -184,17 +213,30 @@ class SpendingAnalyticsService {
                        let firstChoice = choices.first,
                        let message = firstChoice["message"] as? [String: Any],
                        let content = message["content"] as? String {
-
-                        let trends = self.parseTrendResponse(content)
-                        completion(.success(trends))
+                        self.deliverResult(.success(content), to: completion)
                     } else {
-                        completion(.failure(AnalyticsError.invalidResponse))
+                        self.deliverResult(.failure(AnalyticsError.invalidResponse), to: completion)
                     }
+                } else {
+                    self.deliverResult(.failure(AnalyticsError.invalidResponse), to: completion)
                 }
             } catch {
-                completion(.failure(error))
+                self.deliverResult(.failure(error), to: completion)
             }
         }.resume()
+    }
+
+    private func deliverResult<T>(
+        _ result: Result<T, Error>,
+        to completion: @escaping (Result<T, Error>) -> Void
+    ) {
+        if Thread.isMainThread {
+            completion(result)
+        } else {
+            DispatchQueue.main.async {
+                completion(result)
+            }
+        }
     }
 
     // MARK: - Helper Methods
@@ -203,14 +245,9 @@ class SpendingAnalyticsService {
 
         let calendar = Calendar.current
         let now = Date()
-        let currentMonth = calendar.component(.month, from: now)
-        let currentYear = calendar.component(.year, from: now)
-
-        // Filter current month receipts
-        let monthReceipts = receipts.filter { receipt in
-            calendar.component(.month, from: receipt.date) == currentMonth &&
-            calendar.component(.year, from: receipt.date) == currentYear
-        }
+        let monthReceipts = receipts
+            .filter { calendar.isDate($0.date, equalTo: now, toGranularity: .month) }
+            .sorted { $0.date > $1.date }
 
         // Group by category
         var categorySpending: [Category: Double] = [:]
@@ -233,11 +270,24 @@ class SpendingAnalyticsService {
             }
         }
 
-        data += "\nTotal Spending: $\(String(format: "%.2f", monthReceipts.reduce(0) { $0 + $1.totalAmount }))\n"
+        let totalSpending = monthReceipts.reduce(0.0) { $0 + $1.totalAmount }
+        data += "\nTotal Spending: $\(String(format: "%.2f", totalSpending))\n"
         data += "Number of Transactions: \(monthReceipts.count)\n"
 
         // Add recent stores
-        let recentStores = Set(monthReceipts.prefix(10).map { $0.storeName })
+        var seenStores: Set<String> = []
+        var recentStores: [String] = []
+        for receipt in monthReceipts {
+            if !seenStores.contains(receipt.storeName) {
+                recentStores.append(receipt.storeName)
+                seenStores.insert(receipt.storeName)
+            }
+
+            if recentStores.count == 10 {
+                break
+            }
+        }
+
         if !recentStores.isEmpty {
             data += "Recent Stores: \(recentStores.joined(separator: ", "))\n"
         }
@@ -250,35 +300,78 @@ class SpendingAnalyticsService {
 
         let calendar = Calendar.current
 
-        // Group receipts by period
-        var periodSpending: [String: Double] = [:]
-
-        for receipt in receipts {
-            let period: String
-            switch timeframe {
-            case .week:
-                let weekOfYear = calendar.component(.weekOfYear, from: receipt.date)
-                let year = calendar.component(.year, from: receipt.date)
-                period = "Week \(weekOfYear), \(year)"
-            case .month:
-                let month = calendar.component(.month, from: receipt.date)
-                let year = calendar.component(.year, from: receipt.date)
-                period = "\(calendar.monthSymbols[month - 1]) \(year)"
-            case .threeMonths, .sixMonths, .year:
-                let month = calendar.component(.month, from: receipt.date)
-                let year = calendar.component(.year, from: receipt.date)
-                period = "\(calendar.monthSymbols[month - 1]) \(year)"
-            }
-
-            periodSpending[period, default: 0] += receipt.totalAmount
+        let filteredReceipts: [Receipt]
+        if let startDate = startDate(for: timeframe, calendar: calendar) {
+            filteredReceipts = receipts.filter { $0.date >= startDate }
+        } else {
+            filteredReceipts = receipts
         }
 
-        // Sort and format
-        for (period, amount) in periodSpending.sorted(by: { $0.key < $1.key }) {
-            data += "- \(period): $\(String(format: "%.2f", amount))\n"
+        guard !filteredReceipts.isEmpty else {
+            data += "- No data available for the selected timeframe\n"
+            return data
+        }
+
+        var periodSpending: [Date: (label: String, total: Double)] = [:]
+
+        for receipt in filteredReceipts {
+            let periodStart: Date
+            let label: String
+
+            switch timeframe {
+            case .week:
+                let startOfWeek = calendar.dateInterval(of: .weekOfYear, for: receipt.date)?.start ?? calendar.startOfDay(for: receipt.date)
+                periodStart = startOfWeek
+                label = weekLabel(for: startOfWeek)
+            case .month, .threeMonths, .sixMonths, .year:
+                let startOfMonth = calendar.dateInterval(of: .month, for: receipt.date)?.start ?? calendar.startOfDay(for: receipt.date)
+                periodStart = startOfMonth
+                label = monthLabel(for: startOfMonth)
+            }
+
+            var entry = periodSpending[periodStart] ?? (label: label, total: 0)
+            entry.total += receipt.totalAmount
+            periodSpending[periodStart] = entry
+        }
+
+        for entry in periodSpending.sorted(by: { $0.key < $1.key }) {
+            data += "- \(entry.value.label): $\(String(format: "%.2f", entry.value.total))\n"
         }
 
         return data
+    }
+
+    private func startDate(
+        for timeframe: AnalyticsTimeframe,
+        calendar: Calendar,
+        referenceDate: Date = Date()
+    ) -> Date? {
+        let startOfReference = calendar.startOfDay(for: referenceDate)
+
+        switch timeframe {
+        case .week:
+            return calendar.date(byAdding: .day, value: -6, to: startOfReference)
+        case .month:
+            return calendar.date(byAdding: .month, value: -1, to: startOfReference)
+        case .threeMonths:
+            return calendar.date(byAdding: .month, value: -3, to: startOfReference)
+        case .sixMonths:
+            return calendar.date(byAdding: .month, value: -6, to: startOfReference)
+        case .year:
+            return calendar.date(byAdding: .year, value: -1, to: startOfReference)
+        }
+    }
+
+    private func monthLabel(for date: Date) -> String {
+        formatterQueue.sync {
+            monthFormatter.string(from: date)
+        }
+    }
+
+    private func weekLabel(for date: Date) -> String {
+        formatterQueue.sync {
+            weekFormatter.string(from: date)
+        }
     }
 
     private func parseInsightsResponse(_ jsonString: String) -> SpendingInsights {
@@ -462,6 +555,8 @@ enum AnalyticsError: LocalizedError {
     case invalidRequest
     case noDataReceived
     case invalidResponse
+    case missingAPIKey
+    case invalidURL
 
     var errorDescription: String? {
         switch self {
@@ -471,6 +566,10 @@ enum AnalyticsError: LocalizedError {
             return "No data received from analytics service"
         case .invalidResponse:
             return "Invalid response from analytics service"
+        case .missingAPIKey:
+            return "Missing OpenAI API key. Please provide a valid key in SpendingAnalyticsService."
+        case .invalidURL:
+            return "Invalid analytics service URL"
         }
     }
 }
