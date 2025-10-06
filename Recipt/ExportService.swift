@@ -6,23 +6,30 @@ import PDFKit
 class ExportService {
     static let shared = ExportService()
 
+    private let csvDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
     private init() {}
 
     // MARK: - Export to CSV
     func exportToCSV(receipts: [Receipt]) -> URL? {
         var csvString = "Date,Store,Category,Total,Items\n"
+        let orderedReceipts = receipts.sorted { $0.date < $1.date }
 
-        for receipt in receipts {
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateStyle = .short
-
-            let dateString = dateFormatter.string(from: receipt.date)
-            let store = receipt.storeName.replacingOccurrences(of: ",", with: ";")
-            let category = receipt.category.rawValue
+        for receipt in orderedReceipts {
+            let dateString = csvDateFormatter.string(from: receipt.date)
+            let store = escapeCSVField(receipt.storeName)
+            let category = escapeCSVField(receipt.category.rawValue)
             let total = String(format: "%.2f", receipt.totalAmount)
-            let items = receipt.items.map { $0.name }.joined(separator: "; ")
+            let items = escapeCSVField(receipt.items.map { $0.name }.joined(separator: "; "))
 
-            csvString += "\(dateString),\(store),\(category),\(total),\"\(items)\"\n"
+            csvString += "\(dateString),\(store),\(category),\(total),\(items)\n"
         }
 
         // Save to temporary file
@@ -56,6 +63,7 @@ class ExportService {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
 
         let renderer = UIGraphicsPDFRenderer(bounds: pageRect, format: format)
+        let orderedReceipts = receipts.sorted { $0.date < $1.date }
 
         do {
             try renderer.writePDF(to: path) { context in
@@ -63,24 +71,35 @@ class ExportService {
                 let margin: CGFloat = 50
                 let contentWidth = pageWidth - (2 * margin)
 
-                for (index, receipt) in receipts.enumerated() {
-                    // Check if we need a new page
-                    if currentY > pageHeight - 200 {
-                        context.beginPage()
-                        currentY = 50
-                    }
-
-                    // Draw receipt
-                    currentY = drawReceipt(
-                        receipt: receipt,
-                        context: context.cgContext,
-                        startY: currentY,
-                        margin: margin,
-                        contentWidth: contentWidth,
-                        index: index
+                if orderedReceipts.isEmpty {
+                    let message = "No receipts available to export."
+                    message.draw(
+                        at: CGPoint(x: margin, y: currentY),
+                        withAttributes: [
+                            .font: UIFont.systemFont(ofSize: 16),
+                            .foregroundColor: UIColor.systemGray
+                        ]
                     )
+                } else {
+                    for (index, receipt) in orderedReceipts.enumerated() {
+                        // Check if we need a new page
+                        if currentY > pageHeight - 200 {
+                            context.beginPage()
+                            currentY = 50
+                        }
 
-                    currentY += 30 // Space between receipts
+                        // Draw receipt
+                        currentY = drawReceipt(
+                            receipt: receipt,
+                            context: context.cgContext,
+                            startY: currentY,
+                            margin: margin,
+                            contentWidth: contentWidth,
+                            index: index
+                        )
+
+                        currentY += 30 // Space between receipts
+                    }
                 }
             }
 
@@ -245,6 +264,7 @@ class ExportService {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
 
         let renderer = UIGraphicsPDFRenderer(bounds: pageRect, format: format)
+        let orderedReceipts = receipts.sorted { $0.date < $1.date }
 
         do {
             try renderer.writePDF(to: path) { context in
@@ -267,9 +287,18 @@ class ExportService {
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateStyle = .medium
 
-                if let firstReceipt = receipts.last, let lastReceipt = receipts.first {
+                if let firstReceipt = orderedReceipts.first, let lastReceipt = orderedReceipts.last {
                     let dateRange = "\(dateFormatter.string(from: firstReceipt.date)) - \(dateFormatter.string(from: lastReceipt.date))"
                     dateRange.draw(
+                        at: CGPoint(x: margin, y: yPosition),
+                        withAttributes: [
+                            .font: UIFont.systemFont(ofSize: 14),
+                            .foregroundColor: UIColor.systemGray
+                        ]
+                    )
+                    yPosition += 30
+                } else {
+                    "No receipts available in the selected range.".draw(
                         at: CGPoint(x: margin, y: yPosition),
                         withAttributes: [
                             .font: UIFont.systemFont(ofSize: 14),
@@ -280,7 +309,7 @@ class ExportService {
                 }
 
                 // Total spending
-                let totalSpending = receipts.reduce(0) { $0 + $1.totalAmount }
+                let totalSpending = orderedReceipts.reduce(0.0) { $0 + $1.totalAmount }
                 "Total Spending: $\(String(format: "%.2f", totalSpending))".draw(
                     at: CGPoint(x: margin, y: yPosition),
                     withAttributes: [
@@ -290,7 +319,7 @@ class ExportService {
                 )
                 yPosition += 25
 
-                "Total Receipts: \(receipts.count)".draw(
+                "Total Receipts: \(orderedReceipts.count)".draw(
                     at: CGPoint(x: margin, y: yPosition),
                     withAttributes: [
                         .font: UIFont.systemFont(ofSize: 14),
@@ -310,36 +339,36 @@ class ExportService {
                 yPosition += 25
 
                 var categoryTotals: [Category: Double] = [:]
-                for receipt in receipts {
+                for receipt in orderedReceipts {
                     categoryTotals[receipt.category, default: 0] += receipt.totalAmount
                 }
 
-                for category in Category.allCases {
-                    if let amount = categoryTotals[category], amount > 0 {
-                        let categoryText = category.rawValue
-                        let amountText = "$\(String(format: "%.2f", amount))"
+                let sortedCategoryTotals = categoryTotals.sorted { $0.value > $1.value }
 
-                        categoryText.draw(
-                            at: CGPoint(x: margin + 10, y: yPosition),
-                            withAttributes: [
-                                .font: UIFont.systemFont(ofSize: 13),
-                                .foregroundColor: UIColor.black
-                            ]
-                        )
+                for (category, amount) in sortedCategoryTotals where amount > 0 {
+                    let categoryText = category.rawValue
+                    let amountText = "$\(String(format: "%.2f", amount))"
 
-                        let amountSize = amountText.size(withAttributes: [
-                            .font: UIFont.systemFont(ofSize: 13)
-                        ])
-                        amountText.draw(
-                            at: CGPoint(x: pageWidth - margin - amountSize.width, y: yPosition),
-                            withAttributes: [
-                                .font: UIFont.systemFont(ofSize: 13),
-                                .foregroundColor: UIColor.systemGray
-                            ]
-                        )
+                    categoryText.draw(
+                        at: CGPoint(x: margin + 10, y: yPosition),
+                        withAttributes: [
+                            .font: UIFont.systemFont(ofSize: 13),
+                            .foregroundColor: UIColor.black
+                        ]
+                    )
 
-                        yPosition += 22
-                    }
+                    let amountSize = amountText.size(withAttributes: [
+                        .font: UIFont.systemFont(ofSize: 13)
+                    ])
+                    amountText.draw(
+                        at: CGPoint(x: pageWidth - margin - amountSize.width, y: yPosition),
+                        withAttributes: [
+                            .font: UIFont.systemFont(ofSize: 13),
+                            .foregroundColor: UIColor.systemGray
+                        ]
+                    )
+
+                    yPosition += 22
                 }
             }
 
@@ -348,5 +377,16 @@ class ExportService {
             print("Error creating summary PDF: \(error)")
             return nil
         }
+    }
+
+    // MARK: - Utilities
+    private func escapeCSVField(_ value: String) -> String {
+        guard !value.isEmpty else { return "" }
+
+        var sanitized = value.replacingOccurrences(of: "\"", with: "\"\"")
+        if sanitized.contains(",") || sanitized.contains("\"") || sanitized.contains("\n") || sanitized.contains("\r") {
+            sanitized = "\"\(sanitized)\""
+        }
+        return sanitized
     }
 }
