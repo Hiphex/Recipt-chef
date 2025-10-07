@@ -15,14 +15,14 @@ struct DashboardView: View {
 
     private var recentReceipts: [Receipt] {
         let receipts = Array(allReceipts.prefix(5))
-        print("=" * 80)
+        print(String(repeating: "=", count: 80))
         print("📊 DASHBOARD RECEIPTS QUERY")
         print("Total receipts in DB: \(allReceipts.count)")
         print("Recent receipts shown: \(receipts.count)")
         if !allReceipts.isEmpty {
             print("Latest receipt: \(allReceipts.first?.storeName ?? "nil") - $\(allReceipts.first?.totalAmount ?? 0)")
         }
-        print("=" * 80)
+        print(String(repeating: "=", count: 80))
         return receipts
     }
 

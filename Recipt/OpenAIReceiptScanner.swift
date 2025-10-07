@@ -11,11 +11,11 @@ class OpenAIReceiptScanner {
     private init() {}
 
     func scanReceipt(image: UIImage, completion: @escaping (Result<ParsedReceiptData, Error>) -> Void) {
-        print("=" * 80)
+        print(String(repeating: "=", count: 80))
         print("🤖 OPENAI SCANNER STARTED")
         print("API Key present: \(!apiKey.isEmpty)")
         print("Image size: \(image.size)")
-        print("=" * 80)
+        print(String(repeating: "=", count: 80))
 
         guard let imageData = image.jpegData(compressionQuality: 0.6) else {
             print("❌ Failed to convert image to JPEG")
@@ -76,10 +76,10 @@ class OpenAIReceiptScanner {
 
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
-                print("=" * 80)
+                print(String(repeating: "=", count: 80))
                 print("❌ NETWORK ERROR")
                 print("Error: \(error)")
-                print("=" * 80)
+                print(String(repeating: "=", count: 80))
                 completion(.failure(error))
                 return
             }
@@ -103,10 +103,10 @@ class OpenAIReceiptScanner {
                     // Check for API errors
                     if let error = json["error"] as? [String: Any],
                        let message = error["message"] as? String {
-                        print("=" * 80)
+                        print(String(repeating: "=", count: 80))
                         print("❌ OPENAI API ERROR")
                         print("Message: \(message)")
-                        print("=" * 80)
+                        print(String(repeating: "=", count: 80))
                         completion(.failure(NSError(domain: "OpenAI", code: -1, userInfo: [NSLocalizedDescriptionKey: message])))
                         return
                     }

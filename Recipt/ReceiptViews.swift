@@ -733,7 +733,7 @@ struct ScanReceiptView: View {
                         parsedData: parsedData,
                         extractedText: extractedText,
                         onSave: { receipt in
-                            print("=" * 80)
+                            print(String(repeating: "=", count: 80))
                             print("📝 ATTEMPTING TO SAVE RECEIPT")
                             print("Store: \(receipt.storeName)")
                             print("Total: $\(receipt.totalAmount)")
@@ -741,7 +741,7 @@ struct ScanReceiptView: View {
                             print("Date: \(receipt.date)")
                             print("Items: \(receipt.items.count)")
                             print("Image data: \(receipt.imageData?.count ?? 0) bytes")
-                            print("=" * 80)
+                            print(String(repeating: "=", count: 80))
 
                             do {
                                 print("Inserting receipt into modelContext...")
@@ -750,15 +750,15 @@ struct ScanReceiptView: View {
                                 print("Saving modelContext...")
                                 try modelContext.save()
 
-                                print("=" * 80)
+                                print(String(repeating: "=", count: 80))
                                 print("✅ RECEIPT SAVED SUCCESSFULLY")
                                 print("Receipt ID: \(receipt.id)")
-                                print("=" * 80)
+                                print(String(repeating: "=", count: 80))
 
                                 HapticManager.shared.notification(.success)
                                 dismiss()
                             } catch {
-                                print("=" * 80)
+                                print(String(repeating: "=", count: 80))
                                 print("❌ SAVE FAILED")
                                 print("Error type: \(type(of: error))")
                                 print("Error: \(error)")
@@ -768,7 +768,7 @@ struct ScanReceiptView: View {
                                     print("Error code: \(nsError.code)")
                                     print("User info: \(nsError.userInfo)")
                                 }
-                                print("=" * 80)
+                                print(String(repeating: "=", count: 80))
 
                                 errorMessage = "Failed to save receipt: \(error.localizedDescription)"
                                 showError = true
@@ -824,46 +824,46 @@ struct ScanReceiptView: View {
 
     private func processReceipt(image: UIImage) {
         isProcessing = true
-        print("=" * 80)
+        print(String(repeating: "=", count: 80))
         print("🔍 RECEIPT PROCESSING STARTED")
         print("Image size: \(image.size.width)x\(image.size.height)")
-        print("=" * 80)
+        print(String(repeating: "=", count: 80))
 
         // Try AI scanner first (if API key is configured)
         OpenAIReceiptScanner.shared.scanReceipt(image: image) { aiResult in
             DispatchQueue.main.async {
                 switch aiResult {
                 case .success(let data):
-                    print("=" * 80)
+                    print(String(repeating: "=", count: 80))
                     print("✅ AI SCAN SUCCESSFUL")
                     print("Store: \(data.storeName)")
                     print("Total: $\(data.total)")
                     print("Items: \(data.items.count)")
                     print("Date: \(data.date)")
-                    print("=" * 80)
+                    print(String(repeating: "=", count: 80))
 
                     self.extractedText = "Scanned with AI (GPT-5-nano)"
                     self.parsedData = data
                     self.isProcessing = false
 
                 case .failure(let error):
-                    print("=" * 80)
+                    print(String(repeating: "=", count: 80))
                     print("⚠️ AI SCAN FAILED")
                     print("Error: \(error)")
                     print("Error description: \(error.localizedDescription)")
                     print("Falling back to Vision OCR...")
-                    print("=" * 80)
+                    print(String(repeating: "=", count: 80))
 
                     // Fallback to Vision OCR
                     ReceiptScannerService.shared.recognizeText(from: image) { ocrResult in
                         DispatchQueue.main.async {
                             switch ocrResult {
                             case .success(let text):
-                                print("=" * 80)
+                                print(String(repeating: "=", count: 80))
                                 print("✅ VISION OCR SUCCESSFUL")
                                 print("Text length: \(text.count) characters")
                                 print("First 200 chars: \(String(text.prefix(200)))")
-                                print("=" * 80)
+                                print(String(repeating: "=", count: 80))
 
                                 self.extractedText = text
                                 self.parsedData = ReceiptScannerService.shared.parseReceipt(from: text)
@@ -876,12 +876,12 @@ struct ScanReceiptView: View {
                                 self.isProcessing = false
 
                             case .failure(let error):
-                                print("=" * 80)
+                                print(String(repeating: "=", count: 80))
                                 print("❌ VISION OCR FAILED")
                                 print("Error: \(error)")
                                 print("Error description: \(error.localizedDescription)")
                                 print("Showing empty data screen")
-                                print("=" * 80)
+                                print(String(repeating: "=", count: 80))
 
                                 // Still show review screen with empty data
                                 self.extractedText = "Failed to extract text: \(error.localizedDescription)"
