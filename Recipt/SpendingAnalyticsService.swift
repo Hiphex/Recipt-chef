@@ -573,3 +573,18 @@ enum AnalyticsError: LocalizedError {
         }
     }
 }
+
+extension AnalyticsError: Equatable {
+    static func == (lhs: AnalyticsError, rhs: AnalyticsError) -> Bool {
+        switch (lhs, rhs) {
+        case (.invalidRequest, .invalidRequest),
+             (.noDataReceived, .noDataReceived),
+             (.invalidResponse, .invalidResponse),
+             (.missingAPIKey, .missingAPIKey),
+             (.invalidURL, .invalidURL):
+            return true
+        default:
+            return false
+        }
+    }
+}
