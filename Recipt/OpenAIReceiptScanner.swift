@@ -29,8 +29,14 @@ class OpenAIReceiptScanner {
 
         // Concise prompt
         let prompt = """
-        Extract: storeName (not slogan), date (MM/DD/2024 or MM/DD/2025 - use 4 digits), all items with prices, total.
+        Extract receipt data. CRITICAL: storeName must be the actual business name ONLY (e.g., "Walmart", "Target", "CVS"), NOT slogans or taglines like "Save money. Live better."
+
+        Extract: storeName (business name ONLY, ignore any slogans), date (MM/DD/YYYY with 4-digit year), all items with prices, total.
         Format: {"storeName":"","date":"MM/DD/YYYY","items":[{"name":"","price":0.0}],"total":0.0}
+
+        Examples:
+        - "WALMART Save money" → storeName: "Walmart"
+        - "Target Expect More" → storeName: "Target"
         """
 
         let requestBody: [String: Any] = [

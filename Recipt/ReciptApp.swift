@@ -16,6 +16,19 @@ struct ReciptApp: App {
     let modelContainer: ModelContainer
 
     init() {
+        // Delete any existing CoreData/SwiftData stores to ensure clean migration
+        if let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            let storeURL = appSupportURL.appendingPathComponent("default.store")
+
+            // Check if old store exists and delete it
+            if FileManager.default.fileExists(atPath: storeURL.path) {
+                print("🗑️ Removing old data store for clean migration...")
+                try? FileManager.default.removeItem(at: storeURL)
+                try? FileManager.default.removeItem(at: URL(fileURLWithPath: storeURL.path + "-shm"))
+                try? FileManager.default.removeItem(at: URL(fileURLWithPath: storeURL.path + "-wal"))
+            }
+        }
+
         // Create model container with proper configuration
         do {
             let schema = Schema([Receipt.self, ReceiptItem.self, Budget.self])
@@ -24,29 +37,6 @@ struct ReciptApp: App {
             print("✅ Model container initialized successfully")
         } catch {
             print("❌ Failed to initialize model container: \(error)")
-
-            // If migration fails, delete the old store and recreate
-            if let storeURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("default.store") {
-                print("⚠️ Attempting to delete corrupted store at \(storeURL)")
-                try? FileManager.default.removeItem(at: storeURL)
-
-                // Also remove associated files
-                try? FileManager.default.removeItem(at: storeURL.deletingPathExtension().appendingPathExtension("store-shm"))
-                try? FileManager.default.removeItem(at: storeURL.deletingPathExtension().appendingPathExtension("store-wal"))
-
-                // Retry creation
-                do {
-                    let schema = Schema([Receipt.self, ReceiptItem.self, Budget.self])
-                    let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-                    modelContainer = try ModelContainer(for: schema, configurations: [config])
-                    print("✅ Model container initialized successfully after store deletion")
-                    return
-                } catch {
-                    print("❌ Failed to initialize model container after deletion: \(error)")
-                    fatalError("Could not initialize ModelContainer: \(error)")
-                }
-            }
-
             fatalError("Could not initialize ModelContainer: \(error)")
         }
     }
