@@ -11,12 +11,21 @@ class OpenAIReceiptScanner {
     private init() {}
 
     func scanReceipt(image: UIImage, completion: @escaping (Result<ParsedReceiptData, Error>) -> Void) {
+        print("=" * 80)
+        print("🤖 OPENAI SCANNER STARTED")
+        print("API Key present: \(!apiKey.isEmpty)")
+        print("Image size: \(image.size)")
+        print("=" * 80)
+
         guard let imageData = image.jpegData(compressionQuality: 0.6) else {
+            print("❌ Failed to convert image to JPEG")
             completion(.failure(ScanError.invalidImage))
             return
         }
 
+        print("✅ Image converted to JPEG: \(imageData.count) bytes")
         let base64Image = imageData.base64EncodedString()
+        print("✅ Base64 encoded: \(base64Image.count) characters")
 
         // Concise prompt
         let prompt = """
@@ -63,23 +72,41 @@ class OpenAIReceiptScanner {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
 
+        print("🌐 Sending request to OpenAI...")
+
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
+                print("=" * 80)
+                print("❌ NETWORK ERROR")
+                print("Error: \(error)")
+                print("=" * 80)
                 completion(.failure(error))
                 return
             }
 
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📡 HTTP Response: \(httpResponse.statusCode)")
+            }
+
             guard let data = data else {
+                print("❌ No data received from API")
                 completion(.failure(ScanError.noDataReceived))
                 return
             }
 
+            print("✅ Received \(data.count) bytes of data")
+
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    print("✅ JSON parsed successfully")
 
                     // Check for API errors
                     if let error = json["error"] as? [String: Any],
                        let message = error["message"] as? String {
+                        print("=" * 80)
+                        print("❌ OPENAI API ERROR")
+                        print("Message: \(message)")
+                        print("=" * 80)
                         completion(.failure(NSError(domain: "OpenAI", code: -1, userInfo: [NSLocalizedDescriptionKey: message])))
                         return
                     }
@@ -89,16 +116,27 @@ class OpenAIReceiptScanner {
                        let message = firstChoice["message"] as? [String: Any],
                        let content = message["content"] as? String {
 
+                        print("✅ Got AI response content (\(content.count) chars)")
+                        print("Content preview: \(String(content.prefix(200)))")
+
                         // Parse the JSON response
                         let parsedData = self.parseAIResponse(content)
+                        print("✅ Parsed AI response successfully")
                         completion(.success(parsedData))
                     } else {
+                        print("❌ Invalid response structure from API")
+                        print("JSON keys: \(json.keys)")
                         completion(.failure(ScanError.invalidResponse))
                     }
                 } else {
+                    print("❌ Failed to parse JSON response")
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        print("Raw response: \(responseString.prefix(500))")
+                    }
                     completion(.failure(ScanError.invalidResponse))
                 }
             } catch {
+                print("❌ JSON parsing error: \(error)")
                 completion(.failure(error))
             }
         }.resume()

@@ -7,9 +7,6 @@ struct DocumentCameraView: UIViewControllerRepresentable {
     var onImageCaptured: (UIImage) -> Void
 
     func makeUIViewController(context: Context) -> VNDocumentCameraViewController {
-        print("=" * 80)
-        print("📷 DOCUMENT CAMERA INITIALIZING")
-        print("=" * 80)
         let controller = VNDocumentCameraViewController()
         controller.delegate = context.coordinator
         return controller
@@ -35,31 +32,18 @@ struct DocumentCameraView: UIViewControllerRepresentable {
             _ controller: VNDocumentCameraViewController,
             didFinishWith scan: VNDocumentCameraScan
         ) {
-            print("=" * 80)
-            print("📸 CAMERA SCAN COMPLETED")
-            print("Page count: \(scan.pageCount)")
-            print("=" * 80)
-
             // Get the first scanned image
             guard scan.pageCount > 0 else {
-                print("❌ No pages scanned")
                 parent.dismiss()
                 return
             }
 
             let image = scan.imageOfPage(at: 0)
-            print("✅ Image captured: \(image.size.width)x\(image.size.height)")
-            print("Calling onImageCaptured callback...")
-
             parent.onImageCaptured(image)
-            print("✅ Callback executed, dismissing camera")
             parent.dismiss()
         }
 
         func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
-            print("=" * 80)
-            print("❌ CAMERA CANCELLED BY USER")
-            print("=" * 80)
             parent.dismiss()
         }
 
@@ -67,11 +51,7 @@ struct DocumentCameraView: UIViewControllerRepresentable {
             _ controller: VNDocumentCameraViewController,
             didFailWithError error: Error
         ) {
-            print("=" * 80)
-            print("❌ CAMERA ERROR")
-            print("Error: \(error)")
-            print("Error description: \(error.localizedDescription)")
-            print("=" * 80)
+            print("Document camera error: \(error.localizedDescription)")
             parent.dismiss()
         }
     }

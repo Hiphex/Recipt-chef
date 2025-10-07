@@ -733,16 +733,43 @@ struct ScanReceiptView: View {
                         parsedData: parsedData,
                         extractedText: extractedText,
                         onSave: { receipt in
-                            print("📝 Attempting to save receipt: \(receipt.storeName) - $\(receipt.totalAmount)")
+                            print("=" * 80)
+                            print("📝 ATTEMPTING TO SAVE RECEIPT")
+                            print("Store: \(receipt.storeName)")
+                            print("Total: $\(receipt.totalAmount)")
+                            print("Category: \(receipt.category.rawValue)")
+                            print("Date: \(receipt.date)")
+                            print("Items: \(receipt.items.count)")
+                            print("Image data: \(receipt.imageData?.count ?? 0) bytes")
+                            print("=" * 80)
 
                             do {
+                                print("Inserting receipt into modelContext...")
                                 modelContext.insert(receipt)
+
+                                print("Saving modelContext...")
                                 try modelContext.save()
-                                print("✅ Receipt saved successfully: \(receipt.storeName)")
+
+                                print("=" * 80)
+                                print("✅ RECEIPT SAVED SUCCESSFULLY")
+                                print("Receipt ID: \(receipt.id)")
+                                print("=" * 80)
+
                                 HapticManager.shared.notification(.success)
                                 dismiss()
                             } catch {
-                                print("❌ Failed to save receipt: \(error.localizedDescription)")
+                                print("=" * 80)
+                                print("❌ SAVE FAILED")
+                                print("Error type: \(type(of: error))")
+                                print("Error: \(error)")
+                                print("Error description: \(error.localizedDescription)")
+                                if let nsError = error as NSError? {
+                                    print("Error domain: \(nsError.domain)")
+                                    print("Error code: \(nsError.code)")
+                                    print("User info: \(nsError.userInfo)")
+                                }
+                                print("=" * 80)
+
                                 errorMessage = "Failed to save receipt: \(error.localizedDescription)"
                                 showError = true
                             }
@@ -797,32 +824,65 @@ struct ScanReceiptView: View {
 
     private func processReceipt(image: UIImage) {
         isProcessing = true
-        print("🔍 Starting receipt processing...")
+        print("=" * 80)
+        print("🔍 RECEIPT PROCESSING STARTED")
+        print("Image size: \(image.size.width)x\(image.size.height)")
+        print("=" * 80)
 
         // Try AI scanner first (if API key is configured)
         OpenAIReceiptScanner.shared.scanReceipt(image: image) { aiResult in
             DispatchQueue.main.async {
                 switch aiResult {
                 case .success(let data):
-                    print("✅ AI scan successful: \(data.storeName) - $\(data.total)")
+                    print("=" * 80)
+                    print("✅ AI SCAN SUCCESSFUL")
+                    print("Store: \(data.storeName)")
+                    print("Total: $\(data.total)")
+                    print("Items: \(data.items.count)")
+                    print("Date: \(data.date)")
+                    print("=" * 80)
+
                     self.extractedText = "Scanned with AI (GPT-5-nano)"
                     self.parsedData = data
                     self.isProcessing = false
 
                 case .failure(let error):
-                    print("⚠️ AI scan failed, trying Vision OCR: \(error.localizedDescription)")
+                    print("=" * 80)
+                    print("⚠️ AI SCAN FAILED")
+                    print("Error: \(error)")
+                    print("Error description: \(error.localizedDescription)")
+                    print("Falling back to Vision OCR...")
+                    print("=" * 80)
+
                     // Fallback to Vision OCR
                     ReceiptScannerService.shared.recognizeText(from: image) { ocrResult in
                         DispatchQueue.main.async {
                             switch ocrResult {
                             case .success(let text):
-                                print("✅ Vision OCR successful, extracted \(text.count) characters")
+                                print("=" * 80)
+                                print("✅ VISION OCR SUCCESSFUL")
+                                print("Text length: \(text.count) characters")
+                                print("First 200 chars: \(String(text.prefix(200)))")
+                                print("=" * 80)
+
                                 self.extractedText = text
                                 self.parsedData = ReceiptScannerService.shared.parseReceipt(from: text)
+
+                                print("Parsed data:")
+                                print("  Store: \(self.parsedData?.storeName ?? "nil")")
+                                print("  Total: $\(self.parsedData?.total ?? 0)")
+                                print("  Items: \(self.parsedData?.items.count ?? 0)")
+
                                 self.isProcessing = false
 
                             case .failure(let error):
-                                print("❌ Both AI and OCR failed: \(error.localizedDescription)")
+                                print("=" * 80)
+                                print("❌ VISION OCR FAILED")
+                                print("Error: \(error)")
+                                print("Error description: \(error.localizedDescription)")
+                                print("Showing empty data screen")
+                                print("=" * 80)
+
                                 // Still show review screen with empty data
                                 self.extractedText = "Failed to extract text: \(error.localizedDescription)"
                                 self.parsedData = ParsedReceiptData(
@@ -832,6 +892,8 @@ struct ScanReceiptView: View {
                                     total: 0.0
                                 )
                                 self.isProcessing = false
+                                self.errorMessage = "Both AI and OCR scanning failed. Please enter details manually."
+                                self.showError = true
                             }
                         }
                     }
