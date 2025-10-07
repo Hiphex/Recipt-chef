@@ -5,7 +5,7 @@ import UIKit
 class SpendingAnalyticsService {
     static let shared = SpendingAnalyticsService()
 
-    private let apiKey = "" // Add your OpenAI API key here
+    private let apiKey = "" // Add your API key here
     private let apiURL = "https://api.openai.com/v1/chat/completions"
 
     private let monthFormatter: DateFormatter = {

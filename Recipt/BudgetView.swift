@@ -187,9 +187,12 @@ struct BudgetRow: View {
 struct AddBudgetView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Query private var existingBudgets: [Budget]
 
     @State private var selectedCategory: Category = .groceries
-    @State private var monthlyLimit: Double = 500
+    @State private var monthlyLimit: String = "500"
+    @State private var showError = false
+    @State private var errorMessage = ""
 
     var body: some View {
         NavigationStack {
@@ -201,12 +204,14 @@ struct AddBudgetView: View {
                                 .tag(category)
                         }
                     }
+                    .pickerStyle(.menu)
                 }
 
                 Section("Monthly Limit") {
                     HStack {
                         Text("$")
-                        TextField("Amount", value: $monthlyLimit, format: .number)
+                            .foregroundStyle(.secondary)
+                        TextField("Amount", text: $monthlyLimit)
                             .keyboardType(.decimalPad)
                     }
                 }
@@ -216,6 +221,7 @@ struct AddBudgetView: View {
                         saveBudget()
                     }
                     .frame(maxWidth: .infinity)
+                    .disabled(monthlyLimit.isEmpty)
                 }
             }
             .navigationTitle("New Budget")
@@ -227,18 +233,47 @@ struct AddBudgetView: View {
                     }
                 }
             }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(errorMessage)
+            }
         }
     }
 
     private func saveBudget() {
+        // Check if budget already exists for this category
+        if existingBudgets.contains(where: { $0.category == selectedCategory }) {
+            errorMessage = "A budget for \(selectedCategory.rawValue) already exists. Please edit the existing budget instead."
+            showError = true
+            return
+        }
+
+        // Validate and parse amount
+        guard let amount = Double(monthlyLimit.replacingOccurrences(of: ",", with: "")),
+              amount > 0 else {
+            errorMessage = "Please enter a valid amount greater than 0"
+            showError = true
+            return
+        }
+
         let budget = Budget(
             category: selectedCategory,
-            monthlyLimit: monthlyLimit,
+            monthlyLimit: amount,
             month: Date()
         )
 
         modelContext.insert(budget)
-        try? modelContext.save()
-        dismiss()
+
+        do {
+            try modelContext.save()
+            print("✅ Budget saved successfully: \(selectedCategory.rawValue) - $\(amount)")
+            HapticManager.shared.notification(.success)
+            dismiss()
+        } catch {
+            print("❌ Failed to save budget: \(error.localizedDescription)")
+            errorMessage = "Failed to save budget: \(error.localizedDescription)"
+            showError = true
+        }
     }
 }

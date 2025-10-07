@@ -13,11 +13,25 @@ import Foundation
 struct ReciptApp: App {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
+    let modelContainer: ModelContainer
+
     init() {
+        // Register the value transformer BEFORE creating the model container
         ValueTransformer.setValueTransformer(
             TagsValueTransformer(),
             forName: .tagsValueTransformerName
         )
+
+        // Create model container with proper configuration
+        do {
+            let schema = Schema([Receipt.self, ReceiptItem.self, Budget.self])
+            let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+            modelContainer = try ModelContainer(for: schema, configurations: [config])
+            print("✅ Model container initialized successfully")
+        } catch {
+            print("❌ Failed to initialize model container: \(error)")
+            fatalError("Could not initialize ModelContainer: \(error)")
+        }
     }
 
     var body: some Scene {
@@ -28,6 +42,6 @@ struct ReciptApp: App {
                 OnboardingView()
             }
         }
-        .modelContainer(for: [Receipt.self, ReceiptItem.self, Budget.self])
+        .modelContainer(modelContainer)
     }
 }

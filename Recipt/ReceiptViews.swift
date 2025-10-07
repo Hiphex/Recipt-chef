@@ -192,7 +192,7 @@ struct ReceiptListView: View {
                         }
                     } label: {
                         Image(systemName: "plus.circle.fill")
-                            .font(.title2)
+                            .imageScale(.medium)
                     }
                 }
             }
@@ -710,6 +710,8 @@ struct ScanReceiptView: View {
     @State private var scannedImage: UIImage?
     @State private var parsedData: ParsedReceiptData?
     @State private var extractedText: String = ""
+    @State private var showError = false
+    @State private var errorMessage = ""
 
     var body: some View {
         NavigationStack {
@@ -731,9 +733,19 @@ struct ScanReceiptView: View {
                         parsedData: parsedData,
                         extractedText: extractedText,
                         onSave: { receipt in
-                            modelContext.insert(receipt)
-                            try? modelContext.save()
-                            dismiss()
+                            print("📝 Attempting to save receipt: \(receipt.storeName) - $\(receipt.totalAmount)")
+
+                            do {
+                                modelContext.insert(receipt)
+                                try modelContext.save()
+                                print("✅ Receipt saved successfully: \(receipt.storeName)")
+                                HapticManager.shared.notification(.success)
+                                dismiss()
+                            } catch {
+                                print("❌ Failed to save receipt: \(error.localizedDescription)")
+                                errorMessage = "Failed to save receipt: \(error.localizedDescription)"
+                                showError = true
+                            }
                         },
                         onCancel: {
                             self.parsedData = nil
@@ -775,32 +787,42 @@ struct ScanReceiptView: View {
                     processReceipt(image: image)
                 }
             }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(errorMessage)
+            }
         }
     }
 
     private func processReceipt(image: UIImage) {
         isProcessing = true
+        print("🔍 Starting receipt processing...")
 
         // Try AI scanner first (if API key is configured)
         OpenAIReceiptScanner.shared.scanReceipt(image: image) { aiResult in
             DispatchQueue.main.async {
                 switch aiResult {
                 case .success(let data):
+                    print("✅ AI scan successful: \(data.storeName) - $\(data.total)")
                     self.extractedText = "Scanned with AI (GPT-5-nano)"
                     self.parsedData = data
                     self.isProcessing = false
 
-                case .failure:
+                case .failure(let error):
+                    print("⚠️ AI scan failed, trying Vision OCR: \(error.localizedDescription)")
                     // Fallback to Vision OCR
                     ReceiptScannerService.shared.recognizeText(from: image) { ocrResult in
                         DispatchQueue.main.async {
                             switch ocrResult {
                             case .success(let text):
+                                print("✅ Vision OCR successful, extracted \(text.count) characters")
                                 self.extractedText = text
                                 self.parsedData = ReceiptScannerService.shared.parseReceipt(from: text)
                                 self.isProcessing = false
 
                             case .failure(let error):
+                                print("❌ Both AI and OCR failed: \(error.localizedDescription)")
                                 // Still show review screen with empty data
                                 self.extractedText = "Failed to extract text: \(error.localizedDescription)"
                                 self.parsedData = ParsedReceiptData(

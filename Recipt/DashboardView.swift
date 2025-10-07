@@ -220,7 +220,7 @@ struct DashboardView: View {
                         showingAllBudgets = true
                     } label: {
                         Image(systemName: "chart.bar.fill")
-                            .imageScale(.large)
+                            .imageScale(.medium)
                     }
                 }
 
@@ -229,7 +229,7 @@ struct DashboardView: View {
                         showingScanner = true
                     } label: {
                         Image(systemName: "plus.circle.fill")
-                            .imageScale(.large)
+                            .imageScale(.medium)
                     }
                 }
             }

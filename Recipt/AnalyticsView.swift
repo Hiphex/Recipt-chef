@@ -17,6 +17,12 @@ struct AnalyticsView: View {
     @State private var errorMessage: String?
     @State private var showingError = false
 
+    // Caching to prevent unnecessary API calls
+    @State private var lastInsightsUpdate: Date?
+    @State private var lastTrendsUpdate: Date?
+    @State private var lastReceiptCount: Int = 0
+    private let cacheValidityMinutes: Double = 15
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -133,12 +139,8 @@ struct AnalyticsView: View {
                 }
             }
             .onAppear {
-                if insights == nil {
-                    loadInsights()
-                }
-                if trends == nil {
-                    loadTrends()
-                }
+                loadInsightsIfNeeded()
+                loadTrendsIfNeeded()
             }
             .alert("Error", isPresented: $showingError) {
                 Button("OK", role: .cancel) {}
@@ -174,12 +176,67 @@ struct AnalyticsView: View {
         }
     }
 
+    private func loadInsightsIfNeeded() {
+        // Check if we should load insights
+        let shouldLoad: Bool = {
+            // Always load if we don't have insights yet
+            guard insights != nil else { return true }
+
+            // Load if receipt count changed significantly (5+ receipts)
+            if abs(allReceipts.count - lastReceiptCount) >= 5 {
+                print("📊 Receipt count changed significantly (\(lastReceiptCount) -> \(allReceipts.count)), reloading insights")
+                return true
+            }
+
+            // Load if cache is expired (15+ minutes old)
+            if let lastUpdate = lastInsightsUpdate {
+                let minutesSinceUpdate = Date().timeIntervalSince(lastUpdate) / 60
+                if minutesSinceUpdate >= cacheValidityMinutes {
+                    print("📊 Insights cache expired (\(Int(minutesSinceUpdate)) minutes old), reloading")
+                    return true
+                }
+            }
+
+            print("📊 Using cached insights (updated \(lastInsightsUpdate != nil ? "\(Int(Date().timeIntervalSince(lastInsightsUpdate!) / 60)) minutes ago" : "never"))")
+            return false
+        }()
+
+        if shouldLoad {
+            loadInsights()
+        }
+    }
+
+    private func loadTrendsIfNeeded() {
+        // Check if we should load trends
+        let shouldLoad: Bool = {
+            // Always load if we don't have trends yet
+            guard trends != nil else { return true }
+
+            // Load if cache is expired (15+ minutes old)
+            if let lastUpdate = lastTrendsUpdate {
+                let minutesSinceUpdate = Date().timeIntervalSince(lastUpdate) / 60
+                if minutesSinceUpdate >= cacheValidityMinutes {
+                    print("📊 Trends cache expired (\(Int(minutesSinceUpdate)) minutes old), reloading")
+                    return true
+                }
+            }
+
+            print("📊 Using cached trends (updated \(lastTrendsUpdate != nil ? "\(Int(Date().timeIntervalSince(lastTrendsUpdate!) / 60)) minutes ago" : "never"))")
+            return false
+        }()
+
+        if shouldLoad {
+            loadTrends()
+        }
+    }
+
     private func loadInsights() {
         guard !allReceipts.isEmpty else {
             insights = SpendingInsights.default
             return
         }
 
+        print("🔄 Loading fresh insights from AI...")
         isLoadingInsights = true
         SpendingAnalyticsService.shared.generateSpendingInsights(
             receipts: Array(allReceipts.prefix(100)),
@@ -189,9 +246,13 @@ struct AnalyticsView: View {
                 isLoadingInsights = false
                 switch result {
                 case .success(let data):
+                    print("✅ Insights loaded successfully")
                     insights = data
+                    lastInsightsUpdate = Date()
+                    lastReceiptCount = allReceipts.count
                     HapticManager.shared.notification(.success)
                 case .failure(let error):
+                    print("❌ Failed to load insights: \(error.localizedDescription)")
                     errorMessage = error.localizedDescription
                     showingError = true
                     insights = SpendingInsights.default
@@ -206,6 +267,7 @@ struct AnalyticsView: View {
             return
         }
 
+        print("🔄 Loading fresh trends from AI...")
         isLoadingTrends = true
         SpendingAnalyticsService.shared.analyzeTrends(
             receipts: filteredReceipts,
@@ -215,9 +277,12 @@ struct AnalyticsView: View {
                 isLoadingTrends = false
                 switch result {
                 case .success(let data):
+                    print("✅ Trends loaded successfully")
                     trends = data
+                    lastTrendsUpdate = Date()
                     HapticManager.shared.notification(.success)
                 case .failure(let error):
+                    print("❌ Failed to load trends: \(error.localizedDescription)")
                     errorMessage = error.localizedDescription
                     showingError = true
                     trends = TrendAnalysis.default
@@ -227,6 +292,10 @@ struct AnalyticsView: View {
     }
 
     private func refreshAnalytics() {
+        print("🔄 Manual refresh requested")
+        // Force reload by clearing cache timestamps
+        lastInsightsUpdate = nil
+        lastTrendsUpdate = nil
         loadInsights()
         loadTrends()
         HapticManager.shared.impact(.medium)
