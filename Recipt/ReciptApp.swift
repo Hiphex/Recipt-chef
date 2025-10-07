@@ -16,12 +16,6 @@ struct ReciptApp: App {
     let modelContainer: ModelContainer
 
     init() {
-        // Register the value transformer BEFORE creating the model container
-        ValueTransformer.setValueTransformer(
-            TagsValueTransformer(),
-            forName: .tagsValueTransformerName
-        )
-
         // Create model container with proper configuration
         do {
             let schema = Schema([Receipt.self, ReceiptItem.self, Budget.self])

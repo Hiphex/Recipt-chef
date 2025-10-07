@@ -12,7 +12,7 @@ final class Receipt {
     var imageData: Data?
     var items: [ReceiptItem]
     var rawText: String?
-    @Attribute(.transformable(by: TagsValueTransformer.self)) var tags: [String]
+    var tags: [String]
     var notes: String?
 
     init(
