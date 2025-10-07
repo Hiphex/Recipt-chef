@@ -7,10 +7,18 @@
 
 import SwiftUI
 import SwiftData
+import Foundation
 
 @main
 struct ReciptApp: App {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+
+    init() {
+        ValueTransformer.setValueTransformer(
+            TagsValueTransformer(),
+            forName: .tagsValueTransformerName
+        )
+    }
 
     var body: some Scene {
         WindowGroup {
